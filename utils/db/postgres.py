@@ -49,7 +49,7 @@ class Database:
         sql = """
         CREATE TABLE IF NOT EXISTS Advertisements (
             id SERIAL PRIMARY KEY,
-            photo_id TEXT,
+            photo_id TEXT NULL,  -- NULL ga ruxsat berish uchun
             text TEXT NOT NULL,
             duration_minutes INT NOT NULL,
             created_by BIGINT NOT NULL,
@@ -166,6 +166,13 @@ class Database:
         WHERE id = $1
         """
         await self.execute(sql, ad_id, execute=True)
+
+    async def alter_advertisement_table(self):
+        sql = """
+        ALTER TABLE Advertisements 
+        ALTER COLUMN photo_id DROP NOT NULL;
+        """
+        await self.execute(sql, execute=True)
 
     async def get_client_by_user_id(self, user_id: int):
         """Foydalanuvchining aktiv klientini olish"""

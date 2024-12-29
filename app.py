@@ -46,7 +46,8 @@ async def database_connected():
     # await db.drop_users()
 
     await db.create_table_clients()  # Avval Clients jadvalini yaratamiz
-    await db.create_table_users()    # Keyin Users jadvalini
+    await db.create_table_users()
+    await db.alter_advertisement_table() # Keyin Users jadvalini
     await db.create_table_advertisement()
     await db.create_table_advertisement_logs()
 
