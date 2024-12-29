@@ -106,16 +106,10 @@ class Database:
         )
         return sql, tuple(parameters.values())
 
-    async def add_advertisement(self, text, duration_minutes, created_by, group_ids,photo_id=None):
-        """
-        Add a new advertisement to the Advertisements table.
-
-        :param photo_id: The photo file ID.
-        :param text: The advertisement text.
-        :param duration_minutes: The duration of the advertisement in minutes.
-        :param created_by: The Telegram ID of the user who created the advertisement.
-        :return: The inserted advertisement record.
-        """
+    async def add_advertisement(self, text, duration_minutes, created_by, group_ids, photo_id=None):
+        if photo_id is None:
+            photo_id = "default_photo_id"  # Replace with a meaningful default or handle as required
+        
         sql = """
         INSERT INTO advertisements (photo_id, text, duration_minutes, created_by, group_ids)
         VALUES ($1, $2, $3, $4, $5) RETURNING *;
