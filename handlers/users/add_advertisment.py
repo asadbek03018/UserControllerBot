@@ -188,6 +188,28 @@ async def show_groups_page(message: types.Message, state: FSMContext, page: int)
     await message.edit_text("📢 Reklama uchun guruhlarni tanlang:", reply_markup=keyboard, parse_mode="HTML")
 
 
+@router.callback_query(CreateAdvertisementStates.selecting_groups, lambda call: call.data.startswith("show_groups:"))
+async def handle_group_pagination(call: types.CallbackQuery, state: FSMContext):
+    page = int(call.data.split(":")[1])
+    await show_groups_page(call.message, state, page)
+
+
+@router.callback_query(CreateAdvertisementStates.selecting_groups, lambda call: call.data.startswith("select_group:"))
+async def handle_group_selection(call: types.CallbackQuery, state: FSMContext):
+    group_id = int(call.data.split(":")[1])
+    data = await state.get_data()
+    selected_groups = data.get("selected_groups", [])
+
+    if group_id in selected_groups:
+        selected_groups.remove(group_id)
+        await call.answer("❌ Guruh o'chirildi")
+    else:
+        selected_groups.append(group_id)
+        await call.answer("✅ Guruh qo'shildi")
+
+    await state.update_data(selected_groups=selected_groups)
+    current_page = len(selected_groups) // PAGE_SIZE
+    await show_groups_page(call.message, state, current_page)
 
 
 @router.callback_query(CreateAdvertisementStates.selecting_groups, lambda call: call.data == "finish_selection")
