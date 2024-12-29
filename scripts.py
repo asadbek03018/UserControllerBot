@@ -1,12 +1,9 @@
 import asyncio
-import os
-import tempfile
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from telethon.sessions import StringSession
 from telethon.sync import TelegramClient
-import aiohttp
-from loader import db, bot
+from loader import db
 
 
 class AdvertisementScheduler:
@@ -15,7 +12,7 @@ class AdvertisementScheduler:
         self.active_tasks = {}
 
     async def start(self):
-        """Start the advertisement scheduler"""
+        """Scheduler ni ishga tushirish"""
         if self.is_running:
             return
 
@@ -24,9 +21,9 @@ class AdvertisementScheduler:
         logging.info("Advertisement scheduler started.")
 
     async def stop(self):
-        """Stop the advertisement scheduler"""
+        """Scheduler ni to'xtatish"""
         self.is_running = False
-        if self.schedule_task:
+        if hasattr(self, 'schedule_task'):
             self.schedule_task.cancel()
             try:
                 await self.schedule_task
@@ -34,11 +31,15 @@ class AdvertisementScheduler:
                 logging.info("Advertisement scheduler stopped.")
 
     async def get_active_advertisements(self):
-        """Get all active advertisements from database"""
+        """Aktiv reklamalarni bazadan olish"""
         sql = """
-        SELECT id, photo_id, text, duration_minutes, created_by, group_ids, created_at
-        FROM Advertisements
-        WHERE is_active = TRUE;
+        SELECT a.id, a.photo_id, a.text, a.duration_minutes, a.created_by, 
+               a.group_ids, a.created_at, a.is_active,
+               COALESCE(MAX(l.sent_at), a.created_at) as last_sent
+        FROM Advertisements a
+        LEFT JOIN AdvertisementLogs l ON a.id = l.ad_id
+        WHERE a.is_active = TRUE
+        GROUP BY a.id
         """
         try:
             return await db.execute(sql, fetch=True)
@@ -47,59 +48,41 @@ class AdvertisementScheduler:
             return []
 
     async def send_advertisement(self, client, group_id, photo_id, text):
-        """Send advertisement to a specific group"""
-        if not photo_id:  # Agar photo_id yo'q bo'lsa
-            try:
-                await client.send_message(group_id, text)
-                logging.info(f"Text advertisement sent to group {group_id}")
-                return True
-            except Exception as e:
-                logging.error(f"Error sending text to group {group_id}: {str(e)}")
-                return False
-
-        temp_file = None
+        """Reklamani yuborish"""
         try:
-            file_info = await bot.get_file(photo_id)
-            file_path = file_info.file_path
+            if photo_id:
+                await client.send_message(
+                    group_id,
+                    text,
+                    file=photo_id,
+                    parse_mode='html'
+                )
+            else:
+                await client.send_message(
+                    group_id,
+                    text,
+                    parse_mode='html'
+                )
 
-            temp_file = tempfile.NamedTemporaryFile(delete=False)
-            temp_path = temp_file.name
-            temp_file.close()
-
-            file_url = f"https://api.telegram.org/file/bot{bot.token}/{file_path}"
-            async with aiohttp.ClientSession() as session:
-                async with session.get(file_url) as response:
-                    if response.status == 200:
-                        content = await response.read()
-                        with open(temp_path, 'wb') as f:
-                            f.write(content)
-
-                        # Telethon orqali rasm yuborish
-                        await client.send_file(
-                            group_id,
-                            temp_path,
-                            caption=text,
-                            force_document=False  # Rasmni file sifatida emas, rasm sifatida yuborish
-                        )
-                        logging.info(f"Photo advertisement sent to group {group_id}")
-                        return True
-                    else:
-                        logging.error(f"Failed to download file: {response.status}")
-                        return False
+            logging.info(f"Advertisement sent to group {group_id}")
+            return True
 
         except Exception as e:
             logging.error(f"Error sending advertisement to group {group_id}: {str(e)}")
             return False
 
-        finally:
-            if temp_file and os.path.exists(temp_path):
-                try:
-                    os.unlink(temp_path)
-                except Exception as e:
-                    logging.error(f"Error deleting temporary file: {str(e)}")
+    async def should_send_advertisement(self, ad, current_time):
+        """Reklamani yuborish vaqti kelganligini tekshirish"""
+        last_sent = ad['last_sent']
+        duration_minutes = ad['duration_minutes']
+
+        # Oxirgi yuborilgan vaqtdan beri o'tgan daqiqalar
+        time_since_last_send = (current_time - last_sent).total_seconds() / 60
+
+        return time_since_last_send >= duration_minutes
 
     async def process_advertisement(self, ad):
-        """Process single advertisement"""
+        """Bitta reklamani qayta ishlash"""
         try:
             client_info = await db.get_client_for_advertisement(ad['created_by'])
 
@@ -112,6 +95,8 @@ class AdvertisementScheduler:
                     int(client_info['api_id']),
                     client_info['api_hash']
             ) as client:
+                await client.connect()
+
                 for group_id in ad['group_ids']:
                     success = await self.send_advertisement(
                         client,
@@ -120,47 +105,31 @@ class AdvertisementScheduler:
                         ad['text']
                     )
                     if success:
+                        # Yuborish vaqtini log qilish
                         await db.log_advertisement_send(ad['id'], group_id)
-                    await asyncio.sleep(2)  # Guruhlar orasida kutish
+                    # Guruhlar orasida 2 sekund kutish
+                    await asyncio.sleep(2)
 
         except Exception as e:
             logging.error(f"Error processing advertisement {ad['id']}: {str(e)}")
 
     async def schedule_advertisements(self):
-        """Main scheduling loop"""
+        """Asosiy scheduling loop"""
         while self.is_running:
             try:
                 current_time = datetime.now()
                 ads = await self.get_active_advertisements()
 
                 for ad in ads:
-                    created_at = ad['created_at']
-                    duration_minutes = ad['duration_minutes']
-
-                    # Oxirgi yuborilgan vaqtdan beri o'tgan daqiqalar
-                    elapsed_minutes = (current_time - created_at).total_seconds() / 60
-
-                    # Agar belgilangan vaqt o'tgan bo'lsa
-                    if elapsed_minutes >= duration_minutes:
+                    # Reklamani yuborish vaqti kelganmi tekshirish
+                    if await self.should_send_advertisement(ad, current_time):
                         await self.process_advertisement(ad)
 
-                        # Yuborilgan vaqtni yangilash
-                        await db.execute(
-                            """
-                            UPDATE Advertisements
-                            SET created_at = CURRENT_TIMESTAMP
-                            WHERE id = $1 AND is_active = TRUE
-                            """,
-                            ad['id'],
-                            execute=True
-                        )
-                        logging.info(f"Advertisement {ad['id']} sent at {current_time}")
-
-                # Har 30 sekundda tekshirish
+                # Har 30 sekundda yangi reklamalarni tekshirish
                 await asyncio.sleep(30)
 
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 logging.error(f"Error in schedule_advertisements: {str(e)}")
-                await asyncio.sleep(30)  # Xatolik yuz berganda ham kutish
+                await asyncio.sleep(30)
