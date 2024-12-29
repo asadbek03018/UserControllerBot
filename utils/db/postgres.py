@@ -215,7 +215,16 @@ class Database:
         return result["active_client_session"] if result else None
 
 
-
+    async def toggle_client_status(self, client_id: int):
+        """Mijoz holatini o'zgartirish"""
+        sql = """
+        UPDATE Clients 
+        SET is_active = NOT is_active 
+        WHERE id = $1 
+        RETURNING is_active
+        """
+        return await self.execute(sql, client_id, fetchrow=True)
+        
     async def switch_active_client(self, user_id: int, client_id: int):
         """
         Switch the active client session for a user.
@@ -229,7 +238,21 @@ class Database:
         WHERE id = $2;
         """
         await self.execute(sql, (client_id, user_id), execute=True)
-
+    
+    async def delete_client(self, client_id: int):
+        """Mijozni o'chirish va tegishli foydalanuvchilarning active_client_session ni NULL qilish"""
+        async with self.pool.acquire() as connection:
+            async with connection.transaction():
+                # Avval Users jadvalida active_client_session ni NULL ga o'zgartirish
+                await connection.execute(
+                    "UPDATE Users SET active_client_session = NULL WHERE active_client_session = $1",
+                    client_id
+                )
+                # Keyin mijozni o'chirish
+                await connection.execute(
+                    "DELETE FROM Clients WHERE id = $1",
+                    client_id
+                )
     async def get_all_clients(self):
         sql = "SELECT * FROM Clients"
         return await self.execute(sql, fetch=True)
