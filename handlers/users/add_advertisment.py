@@ -226,14 +226,21 @@ async def finish_group_selection(call: types.CallbackQuery, state: FSMContext):
         text = sanitize_text(data.get("text", ""))
         duration = data.get("duration")
         created_by = call.from_user.id
-
-        advertisement = await db.add_advertisement(
-            photo_id=photo_id,
-            text=text,
-            duration_minutes=duration,
-            created_by=created_by,
-            group_ids=selected_groups
-        )
+        if photo_id == None:
+            advertisement = await db.add_advertisement(
+                text=text,
+                duration_minutes=duration,
+                created_by=created_by,
+                group_ids=selected_groups
+            )
+        else:
+            advertisement = await db.add_advertisement(
+                photo_id=photo_id,
+                text=text,
+                duration_minutes=duration,
+                created_by=created_by,
+                group_ids=selected_groups
+            )
 
         if advertisement:
             await call.message.answer("✅ Reklama muvaffaqiyatli yaratildi va saqlandi.", parse_mode="HTML")
