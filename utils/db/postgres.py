@@ -107,9 +107,6 @@ class Database:
         return sql, tuple(parameters.values())
 
     async def add_advertisement(self, text, duration_minutes, created_by, group_ids, photo_id=None):
-        if photo_id is None:
-            photo_id = "default_photo_id"  # Replace with a meaningful default or handle as required
-        
         sql = """
         INSERT INTO advertisements (photo_id, text, duration_minutes, created_by, group_ids)
         VALUES ($1, $2, $3, $4, $5) RETURNING *;

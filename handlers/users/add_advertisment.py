@@ -222,25 +222,18 @@ async def finish_group_selection(call: types.CallbackQuery, state: FSMContext):
         return
 
     try:
-        photo_id = data.get("photo_id")  # Endi photo_id None bo'lishi mumkin
+        photo_id = data.get("photo_id")  # photo_id None bo'lishi mumkin
         text = sanitize_text(data.get("text", ""))
         duration = data.get("duration")
         created_by = call.from_user.id
-        if photo_id == None:
-            advertisement = await db.add_advertisement(
-                text=text,
-                duration_minutes=duration,
-                created_by=created_by,
-                group_ids=selected_groups
-            )
-        else:
-            advertisement = await db.add_advertisement(
-                photo_id=photo_id,
-                text=text,
-                duration_minutes=duration,
-                created_by=created_by,
-                group_ids=selected_groups
-            )
+
+        advertisement = await db.add_advertisement(
+            text=text,
+            duration_minutes=duration,
+            created_by=created_by,
+            group_ids=selected_groups,
+            photo_id=photo_id  # photo_id None bo'lsa ham muammo bo'lmaydi
+        )
 
         if advertisement:
             await call.message.answer("✅ Reklama muvaffaqiyatli yaratildi va saqlandi.", parse_mode="HTML")
