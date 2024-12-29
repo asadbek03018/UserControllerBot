@@ -146,6 +146,49 @@ async def handle_duration(call: types.CallbackQuery, state: FSMContext):
     except Exception as e:
         await call.message.answer(f"❌ Xatolik yuz berdi: {str(e)}", parse_mode="HTML")
 
+async def show_groups_page(message: types.Message, state: FSMContext, page: int):
+    data = await state.get_data()
+    groups = data.get("available_groups", [])
+    selected_groups = data.get("selected_groups", [])
+
+    start = page * PAGE_SIZE
+    end = min(start + PAGE_SIZE, len(groups))
+    current_page_groups = groups[start:end]
+
+    buttons = []
+    for group in current_page_groups:
+        group_id = group['id']
+        group_title = group['title']
+        selected = "✅" if group_id in selected_groups else ""
+        buttons.append([
+            InlineKeyboardButton(
+                text=f"{selected} 📢 {group_title}",
+                callback_data=f"select_group:{group_id}"
+            )
+        ])
+
+    navigation_buttons = []
+    if start > 0:
+        navigation_buttons.append(
+            InlineKeyboardButton(text="⬅️ Oldingi", callback_data=f"show_groups:{page - 1}")
+        )
+    if end < len(groups):
+        navigation_buttons.append(
+            InlineKeyboardButton(text="➡️ Keyingi", callback_data=f"show_groups:{page + 1}")
+        )
+
+    if navigation_buttons:
+        buttons.append(navigation_buttons)
+
+    buttons.append([
+        InlineKeyboardButton(text="✅ Tanlash tugadi", callback_data="finish_selection")
+    ])
+
+    keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
+    await message.edit_text("📢 Reklama uchun guruhlarni tanlang:", reply_markup=keyboard, parse_mode="HTML")
+
+
+
 
 @router.callback_query(CreateAdvertisementStates.selecting_groups, lambda call: call.data == "finish_selection")
 async def finish_group_selection(call: types.CallbackQuery, state: FSMContext):
