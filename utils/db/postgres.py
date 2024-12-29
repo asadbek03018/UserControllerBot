@@ -61,18 +61,20 @@ class Database:
         await self.execute(sql, execute=True)
 
 
-    async def create_table_users(self):
+    async def create_table_clients(self):
         sql = """
-        CREATE TABLE IF NOT EXISTS Users (
+        CREATE TABLE IF NOT EXISTS Clients (
             id SERIAL PRIMARY KEY,
-            full_name VARCHAR(255) NOT NULL,
-            username VARCHAR(255) NULL,
-            telegram_id BIGINT NOT NULL UNIQUE,
-            active_client_session INT REFERENCES Clients(id)
+            api_id VARCHAR(255),
+            api_hash TEXT,
+            phone VARCHAR(100),
+            stringsession TEXT,
+            is_active BOOLEAN DEFAULT TRUE,
+            is_banned BOOlEAN DEFAULT FALSE
         );
         """
         await self.execute(sql, execute=True)
-
+        
     async def create_table_advertisement_logs(self):
         sql = """
         CREATE TABLE IF NOT EXISTS AdvertisementLogs (
@@ -84,16 +86,15 @@ class Database:
         """
         await self.execute(sql, execute=True)
 
-    async def create_table_clients(self):
+     async def create_table_users(self):
         sql = """
-        CREATE TABLE IF NOT EXISTS Clients (
+        CREATE TABLE IF NOT EXISTS Users (
             id SERIAL PRIMARY KEY,
-            api_id VARCHAR(255),
-            api_hash TEXT,
-            phone VARCHAR(100),
-            stringsession TEXT,
-            is_active BOOLEAN DEFAULT TRUE,
-            is_banned BOOlEAN DEFAULT FALSE
+            full_name VARCHAR(255) NOT NULL,
+            username VARCHAR(255) NULL,
+            telegram_id BIGINT NOT NULL UNIQUE,
+            active_client_session INT,
+            FOREIGN KEY (active_client_session) REFERENCES Clients(id) ON DELETE SET NULL
         );
         """
         await self.execute(sql, execute=True)
