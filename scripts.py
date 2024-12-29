@@ -29,7 +29,7 @@ class AdvertisementScheduler:
         if self.schedule_task:
             self.schedule_task.cancel()
             try:
-                await self.schedule_task  # Ensure task finishes cleanly
+                await self.schedule_task
             except asyncio.CancelledError:
                 logging.info("Advertisement scheduler stopped.")
 
@@ -48,18 +48,24 @@ class AdvertisementScheduler:
 
     async def send_advertisement(self, client, group_id, photo_id, text):
         """Send advertisement to a specific group"""
+        if not photo_id:  # Agar photo_id yo'q bo'lsa
+            try:
+                await client.send_message(group_id, text)
+                logging.info(f"Text advertisement sent to group {group_id}")
+                return True
+            except Exception as e:
+                logging.error(f"Error sending text to group {group_id}: {str(e)}")
+                return False
+
         temp_file = None
         try:
-            # Fetch file path from Telegram Bot API
             file_info = await bot.get_file(photo_id)
             file_path = file_info.file_path
 
-            # Create temporary file
             temp_file = tempfile.NamedTemporaryFile(delete=False)
             temp_path = temp_file.name
             temp_file.close()
 
-            # Download file from Bot API
             file_url = f"https://api.telegram.org/file/bot{bot.token}/{file_path}"
             async with aiohttp.ClientSession() as session:
                 async with session.get(file_url) as response:
@@ -68,14 +74,14 @@ class AdvertisementScheduler:
                         with open(temp_path, 'wb') as f:
                             f.write(content)
 
-                        # Send file using Telethon
-                        await client.answer_photo(
+                        # Telethon orqali rasm yuborish
+                        await client.send_file(
                             group_id,
-                            photo=temp_path,
+                            temp_path,
                             caption=text,
-                            force_document=False
+                            force_document=False  # Rasmni file sifatida emas, rasm sifatida yuborish
                         )
-                        logging.info(f"Advertisement sent to group {group_id}")
+                        logging.info(f"Photo advertisement sent to group {group_id}")
                         return True
                     else:
                         logging.error(f"Failed to download file: {response.status}")
@@ -86,10 +92,9 @@ class AdvertisementScheduler:
             return False
 
         finally:
-            if temp_file:
+            if temp_file and os.path.exists(temp_path):
                 try:
                     os.unlink(temp_path)
-                    logging.info(f"Temporary file {temp_path} deleted")
                 except Exception as e:
                     logging.error(f"Error deleting temporary file: {str(e)}")
 
@@ -103,9 +108,9 @@ class AdvertisementScheduler:
                 return
 
             async with TelegramClient(
-                StringSession(client_info['stringsession']),
-                int(client_info['api_id']),
-                client_info['api_hash']
+                    StringSession(client_info['stringsession']),
+                    int(client_info['api_id']),
+                    client_info['api_hash']
             ) as client:
                 for group_id in ad['group_ids']:
                     success = await self.send_advertisement(
@@ -116,45 +121,46 @@ class AdvertisementScheduler:
                     )
                     if success:
                         await db.log_advertisement_send(ad['id'], group_id)
-                    await asyncio.sleep(2)
+                    await asyncio.sleep(2)  # Guruhlar orasida kutish
 
         except Exception as e:
             logging.error(f"Error processing advertisement {ad['id']}: {str(e)}")
 
     async def schedule_advertisements(self):
         """Main scheduling loop"""
-        try:
-            while self.is_running:
+        while self.is_running:
+            try:
                 current_time = datetime.now()
                 ads = await self.get_active_advertisements()
 
                 for ad in ads:
-                    try:
-                        created_at = ad['created_at']
-                        duration_minutes = ad['duration_minutes']
-                        time_diff = (current_time - created_at).total_seconds() / 60
+                    created_at = ad['created_at']
+                    duration_minutes = ad['duration_minutes']
 
-                        if time_diff >= duration_minutes:
-                            await self.process_advertisement(ad)
-                            await db.execute(
-                                """
-                                UPDATE Advertisements
-                                SET created_at = CURRENT_TIMESTAMP
-                                WHERE id = $1
-                                AND is_active = TRUE
-                                """,
-                                ad['id'],
-                                execute=True
-                            )
-                            logging.info(f"Advertisement {ad['id']} sent at {current_time}")
+                    # Oxirgi yuborilgan vaqtdan beri o'tgan daqiqalar
+                    elapsed_minutes = (current_time - created_at).total_seconds() / 60
 
-                    except Exception as e:
-                        logging.error(f"Error processing ad {ad['id']}: {str(e)}")
-                        continue
+                    # Agar belgilangan vaqt o'tgan bo'lsa
+                    if elapsed_minutes >= duration_minutes:
+                        await self.process_advertisement(ad)
 
+                        # Yuborilgan vaqtni yangilash
+                        await db.execute(
+                            """
+                            UPDATE Advertisements
+                            SET created_at = CURRENT_TIMESTAMP
+                            WHERE id = $1 AND is_active = TRUE
+                            """,
+                            ad['id'],
+                            execute=True
+                        )
+                        logging.info(f"Advertisement {ad['id']} sent at {current_time}")
+
+                # Har 30 sekundda tekshirish
                 await asyncio.sleep(30)
 
-        except asyncio.CancelledError:
-            logging.info("Scheduler loop cancelled.")
-        except Exception as e:
-            logging.error(f"Unexpected error in advertisement scheduler: {str(e)}")
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logging.error(f"Error in schedule_advertisements: {str(e)}")
+                await asyncio.sleep(30)  # Xatolik yuz berganda ham kutish
