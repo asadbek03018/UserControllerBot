@@ -41,7 +41,12 @@ async def start_create_ad(call: types.CallbackQuery, state: FSMContext):
         await call.message.answer("❌ Aktiv sessiya topilmadi! Iltimos avval sessiyani yarating.", parse_mode="HTML")
         return
 
-    await call.message.answer("📸 Reklama uchun rasm yuboring.\nBekor qilish uchun /cancel", parse_mode="HTML")
+    await call.message.answer(
+        "📸 Reklama uchun rasm yuboring.\n"
+        "Rasmsiz davom etish uchun /continue\n"
+        "Bekor qilish uchun /cancel", 
+        parse_mode="HTML"
+    )
     await state.set_state(CreateAdvertisementStates.waiting_for_photo)
 
 
@@ -49,6 +54,16 @@ async def start_create_ad(call: types.CallbackQuery, state: FSMContext):
 async def cancel_creation(message: types.Message, state: FSMContext):
     await state.clear()
     await message.answer("❌ Reklama yaratish bekor qilindi.", parse_mode="HTML")
+
+
+@router.message(Command('continue'))
+async def skip_photo(message: types.Message, state: FSMContext):
+    current_state = await state.get_state()
+    if current_state == CreateAdvertisementStates.waiting_for_photo:
+        # Rasmsiz davom etish
+        await state.update_data(photo_id=None, file_path=None)
+        await message.answer("✍️ Endi reklama matnini yuboring.\nBekor qilish uchun /cancel", parse_mode="HTML")
+        await state.set_state(CreateAdvertisementStates.waiting_for_text)
 
 
 @router.message(CreateAdvertisementStates.waiting_for_photo, F.photo)
@@ -132,72 +147,6 @@ async def handle_duration(call: types.CallbackQuery, state: FSMContext):
         await call.message.answer(f"❌ Xatolik yuz berdi: {str(e)}", parse_mode="HTML")
 
 
-async def show_groups_page(message: types.Message, state: FSMContext, page: int):
-    data = await state.get_data()
-    groups = data.get("available_groups", [])
-    selected_groups = data.get("selected_groups", [])
-
-    start = page * PAGE_SIZE
-    end = min(start + PAGE_SIZE, len(groups))
-    current_page_groups = groups[start:end]
-
-    buttons = []
-    for group in current_page_groups:
-        group_id = group['id']
-        group_title = group['title']
-        selected = "✅" if group_id in selected_groups else ""
-        buttons.append([
-            InlineKeyboardButton(
-                text=f"{selected} 📢 {group_title}",
-                callback_data=f"select_group:{group_id}"
-            )
-        ])
-
-    navigation_buttons = []
-    if start > 0:
-        navigation_buttons.append(
-            InlineKeyboardButton(text="⬅️ Oldingi", callback_data=f"show_groups:{page - 1}")
-        )
-    if end < len(groups):
-        navigation_buttons.append(
-            InlineKeyboardButton(text="➡️ Keyingi", callback_data=f"show_groups:{page + 1}")
-        )
-
-    if navigation_buttons:
-        buttons.append(navigation_buttons)
-
-    buttons.append([
-        InlineKeyboardButton(text="✅ Tanlash tugadi", callback_data="finish_selection")
-    ])
-
-    keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
-    await message.edit_text("📢 Reklama uchun guruhlarni tanlang:", reply_markup=keyboard, parse_mode="HTML")
-
-
-@router.callback_query(CreateAdvertisementStates.selecting_groups, lambda call: call.data.startswith("show_groups:"))
-async def handle_group_pagination(call: types.CallbackQuery, state: FSMContext):
-    page = int(call.data.split(":")[1])
-    await show_groups_page(call.message, state, page)
-
-
-@router.callback_query(CreateAdvertisementStates.selecting_groups, lambda call: call.data.startswith("select_group:"))
-async def handle_group_selection(call: types.CallbackQuery, state: FSMContext):
-    group_id = int(call.data.split(":")[1])
-    data = await state.get_data()
-    selected_groups = data.get("selected_groups", [])
-
-    if group_id in selected_groups:
-        selected_groups.remove(group_id)
-        await call.answer("❌ Guruh o'chirildi")
-    else:
-        selected_groups.append(group_id)
-        await call.answer("✅ Guruh qo'shildi")
-
-    await state.update_data(selected_groups=selected_groups)
-    current_page = len(selected_groups) // PAGE_SIZE
-    await show_groups_page(call.message, state, current_page)
-
-
 @router.callback_query(CreateAdvertisementStates.selecting_groups, lambda call: call.data == "finish_selection")
 async def finish_group_selection(call: types.CallbackQuery, state: FSMContext):
     data = await state.get_data()
@@ -208,7 +157,7 @@ async def finish_group_selection(call: types.CallbackQuery, state: FSMContext):
         return
 
     try:
-        photo_id = data.get("photo_id")
+        photo_id = data.get("photo_id")  # Endi photo_id None bo'lishi mumkin
         text = sanitize_text(data.get("text", ""))
         duration = data.get("duration")
         created_by = call.from_user.id
