@@ -120,7 +120,7 @@ class Database:
         INSERT INTO advertisements (photo_id, text, duration_minutes, created_by, group_ids)
         VALUES ($1, $2, $3, $4, $5) RETURNING *;
         """
-        return await self.execute(sql, photo_id, text, duration_minutes, created_by, group_ids, fetchrow=True)
+        return await self.execute(sql, text, duration_minutes, created_by, group_ids, photo_id = None, fetchrow=True)
 
     async def add_user(self, full_name, username, telegram_id):
         sql = "INSERT INTO users (full_name, username, telegram_id) VALUES($1, $2, $3) returning *"
