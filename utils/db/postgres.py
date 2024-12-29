@@ -106,7 +106,7 @@ class Database:
         )
         return sql, tuple(parameters.values())
 
-    async def add_advertisement(self, photo_id=None, text, duration_minutes, created_by, group_ids):
+    async def add_advertisement(self, text, duration_minutes, created_by, group_ids,photo_id=None):
         """
         Add a new advertisement to the Advertisements table.
 
