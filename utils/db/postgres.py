@@ -49,7 +49,7 @@ class Database:
         sql = """
         CREATE TABLE IF NOT EXISTS Advertisements (
             id SERIAL PRIMARY KEY,
-            photo_id TEXT NOT NULL,
+            photo_id TEXT,
             text TEXT NOT NULL,
             duration_minutes INT NOT NULL,
             created_by BIGINT NOT NULL,
