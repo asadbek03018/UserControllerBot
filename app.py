@@ -1,5 +1,5 @@
 import asyncio
-
+from aiogram.client.default import DefaultBotProperties
 from aiogram import Bot, Dispatcher
 from aiogram.client.session.middlewares.request_logging import logger
 from aiogram.enums import ChatType

@@ -69,11 +69,11 @@ class AdvertisementScheduler:
                             f.write(content)
 
                         # Send file using Telethon
-                        await client.send_file(
+                        await client.answer_photo(
                             group_id,
-                            temp_path,
+                            photo=temp_path,
                             caption=text,
-                            force_document=True
+                            force_document=False
                         )
                         logging.info(f"Advertisement sent to group {group_id}")
                         return True
