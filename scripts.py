@@ -1,11 +1,12 @@
 import asyncio
 import logging
+from datetime import datetime
 from telethon.sessions import StringSession
 from telethon.sync import TelegramClient
 from telethon.tl.types import InputPhoto
 from loader import db  # O'z ma'lumotlar bazangiz uchun
 
-class AdvertisementHandler:
+class AdvertisementScheduler:
     def __init__(self):
         self.is_running = False
         self.active_tasks = {}
@@ -98,7 +99,7 @@ class AdvertisementHandler:
         """Reklamalarni rejalashtirish"""
         while self.is_running:
             try:
-                current_time = asyncio.get_event_loop().time()
+                current_time = datetime.now()  # Hozirgi vaqtni datetime formatida olish
                 ads = await self.get_active_advertisements()
 
                 for ad in ads:
@@ -124,6 +125,7 @@ class AdvertisementHandler:
         if not last_sent:
             return True
 
+        # Vaqtni solishtirish (datetime ob'ekti va vaqt farqi)
         elapsed_minutes = (current_time - last_sent).total_seconds() / 60
         return elapsed_minutes >= duration_minutes
 
@@ -142,4 +144,3 @@ class AdvertisementHandler:
         except Exception as e:
             logging.error(f"Error fetching advertisements: {str(e)}")
             return []
-
