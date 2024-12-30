@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from telethon.sessions import StringSession
 from telethon.sync import TelegramClient
 from loader import db
+import os
 
 
 class AdvertisementScheduler:
@@ -50,14 +51,31 @@ class AdvertisementScheduler:
     async def send_advertisement(self, client, group_id, photo_id, text):
         """Reklamani yuborish"""
         try:
+            # O'zbek harflarini to'g'rilash
+            text = text.replace('&#x27;', "'").replace('&quot;', '"')
+
             if photo_id:
-                await client.send_message(
-                    group_id,
-                    text,
-                    file=photo_id,
-                    parse_mode='html'
-                )
+                try:
+                    # Rasmni media sifatida yuklash
+                    uploaded_file = await client.upload_file(photo_id)
+
+                    # Yuklangan rasm va caption bilan xabar yuborish
+                    await client.send_file(
+                        entity=group_id,
+                        file=uploaded_file,
+                        caption=text,
+                        parse_mode='html'
+                    )
+                except FileNotFoundError:
+                    logging.error(f"File not found: {photo_id}")
+                    # Agar rasm topilmasa, faqat matnni yuborish
+                    await client.send_message(
+                        group_id,
+                        text,
+                        parse_mode='html'
+                    )
             else:
+                # Faqat matn yuborish
                 await client.send_message(
                     group_id,
                     text,
@@ -76,10 +94,14 @@ class AdvertisementScheduler:
         last_sent = ad['last_sent']
         duration_minutes = ad['duration_minutes']
 
+        if not last_sent:
+            return True
+
         # Oxirgi yuborilgan vaqtdan beri o'tgan daqiqalar
         time_since_last_send = (current_time - last_sent).total_seconds() / 60
 
-        return time_since_last_send >= duration_minutes
+        # Belgilangan vaqt o'tganmi tekshirish
+        return time_since_last_send >= float(duration_minutes)
 
     async def process_advertisement(self, ad):
         """Bitta reklamani qayta ishlash"""
@@ -121,15 +143,21 @@ class AdvertisementScheduler:
                 ads = await self.get_active_advertisements()
 
                 for ad in ads:
-                    # Reklamani yuborish vaqti kelganmi tekshirish
                     if await self.should_send_advertisement(ad, current_time):
-                        await self.process_advertisement(ad)
+                        # Reklamani alohida task sifatida ishga tushirish
+                        task = asyncio.create_task(self.process_advertisement(ad))
+                        self.active_tasks[ad['id']] = task
 
-                # Har 30 sekundda yangi reklamalarni tekshirish
-                await asyncio.sleep(30)
+                # Har 60 sekundda yangi reklamalarni tekshirish
+                await asyncio.sleep(60)
+
+                # Tugallangan tasklarni tozalash
+                completed_tasks = [ad_id for ad_id, task in self.active_tasks.items() if task.done()]
+                for ad_id in completed_tasks:
+                    del self.active_tasks[ad_id]
 
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 logging.error(f"Error in schedule_advertisements: {str(e)}")
-                await asyncio.sleep(30)
+                await asyncio.sleep(60)
