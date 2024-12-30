@@ -56,19 +56,26 @@ class AdvertisementScheduler:
 
             if photo_id:
                 try:
-                    # Rasmni media sifatida yuklash
-                    uploaded_file = await client.upload_file(photo_id)
-
-                    # Yuklangan rasm va caption bilan xabar yuborish
-                    await client.send_file(
-                        entity=group_id,
-                        file=uploaded_file,
-                        caption=text,
-                        parse_mode='html'
-                    )
-                except FileNotFoundError:
-                    logging.error(f"File not found: {photo_id}")
-                    # Agar rasm topilmasa, faqat matnni yuborish
+                    # photo_id ni InputPhoto obyektiga aylantirish
+                    media = await client.get_messages(None, ids=str(photo_id))
+                    if media and media.media:
+                        # Mavjud rasmni yuborish
+                        await client.send_file(
+                            entity=group_id,
+                            file=media.media,
+                            caption=text,
+                            parse_mode='html'
+                        )
+                    else:
+                        # Agar rasm topilmasa, faqat matnni yuborish
+                        logging.error(f"Media not found for photo_id: {photo_id}")
+                        await client.send_message(
+                            group_id,
+                            text,
+                            parse_mode='html'
+                        )
+                except ValueError:
+                    logging.error(f"Invalid photo_id format: {photo_id}")
                     await client.send_message(
                         group_id,
                         text,
