@@ -57,7 +57,7 @@ class AdvertisementScheduler:
             if photo_id:
                 try:
                     # photo_id ni InputPhoto obyektiga aylantirish
-                    media = await client.get_messages(None, ids=str(photo_id))
+                    media = await client.get_messages(None, ids=int(photo_id))
                     if media and media.media:
                         # Mavjud rasmni yuborish
                         await client.send_file(
