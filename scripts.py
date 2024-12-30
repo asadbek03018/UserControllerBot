@@ -1,10 +1,10 @@
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from telethon.sessions import StringSession
 from telethon.sync import TelegramClient
 from loader import db
-import os
+import json
 
 
 class AdvertisementScheduler:
@@ -13,7 +13,7 @@ class AdvertisementScheduler:
         self.active_tasks = {}
 
     async def start(self):
-        """Scheduler ni ishga tushirish"""
+        """Schedulerni ishga tushirish"""
         if self.is_running:
             return
 
@@ -22,7 +22,7 @@ class AdvertisementScheduler:
         logging.info("Advertisement scheduler started.")
 
     async def stop(self):
-        """Scheduler ni to'xtatish"""
+        """Schedulerni to'xtatish"""
         self.is_running = False
         if hasattr(self, 'schedule_task'):
             self.schedule_task.cancel()
@@ -56,33 +56,22 @@ class AdvertisementScheduler:
 
             if photo_id:
                 try:
-                    # photo_id ni InputPhoto obyektiga aylantirish
-                    media = await client.get_messages(None, ids=int(photo_id))
-                    if media and media.media:
-                        # Mavjud rasmni yuborish
-                        await client.send_file(
-                            entity=group_id,
-                            file=media.media,
-                            caption=text,
-                            parse_mode='html'
-                        )
-                    else:
-                        # Agar rasm topilmasa, faqat matnni yuborish
-                        logging.error(f"Media not found for photo_id: {photo_id}")
-                        await client.send_message(
-                            group_id,
-                            text,
-                            parse_mode='html'
-                        )
-                except ValueError:
-                    logging.error(f"Invalid photo_id format: {photo_id}")
+                    # photo_id dan rasmni yuborish
+                    await client.send_file(
+                        entity=group_id,
+                        file=photo_id,
+                        caption=text,
+                        parse_mode='html'
+                    )
+                except Exception as e:
+                    logging.error(f"Invalid photo_id or error sending file: {photo_id}, {str(e)}")
                     await client.send_message(
                         group_id,
                         text,
                         parse_mode='html'
                     )
             else:
-                # Faqat matn yuborish
+                # Faqat matnni yuborish
                 await client.send_message(
                     group_id,
                     text,
@@ -99,15 +88,15 @@ class AdvertisementScheduler:
     async def should_send_advertisement(self, ad, current_time):
         """Reklamani yuborish vaqti kelganligini tekshirish"""
         last_sent = ad['last_sent']
-        duration_minutes = ad['duration_minutes']
+        if isinstance(last_sent, str):  # Agar string bo'lsa, uni datetime obyektiga aylantirish
+            last_sent = datetime.fromisoformat(last_sent)
 
+        duration_minutes = ad['duration_minutes']
         if not last_sent:
             return True
 
         # Oxirgi yuborilgan vaqtdan beri o'tgan daqiqalar
         time_since_last_send = (current_time - last_sent).total_seconds() / 60
-
-        # Belgilangan vaqt o'tganmi tekshirish
         return time_since_last_send >= float(duration_minutes)
 
     async def process_advertisement(self, ad):
@@ -125,19 +114,18 @@ class AdvertisementScheduler:
                     client_info['api_hash']
             ) as client:
                 await client.connect()
+                group_ids = json.loads(ad['group_ids']) if isinstance(ad['group_ids'], str) else ad['group_ids']
 
-                for group_id in ad['group_ids']:
-                    success = await self.send_advertisement(
-                        client,
-                        group_id,
-                        ad['photo_id'],
-                        ad['text']
-                    )
+                tasks = [
+                    asyncio.create_task(self.send_advertisement(client, group_id, ad['photo_id'], ad['text']))
+                    for group_id in group_ids
+                ]
+                results = await asyncio.gather(*tasks)
+
+                # Log yuborilganlar
+                for group_id, success in zip(group_ids, results):
                     if success:
-                        # Yuborish vaqtini log qilish
                         await db.log_advertisement_send(ad['id'], group_id)
-                    # Guruhlar orasida 2 sekund kutish
-                    await asyncio.sleep(2)
 
         except Exception as e:
             logging.error(f"Error processing advertisement {ad['id']}: {str(e)}")
@@ -159,7 +147,7 @@ class AdvertisementScheduler:
                 await asyncio.sleep(60)
 
                 # Tugallangan tasklarni tozalash
-                completed_tasks = [ad_id for ad_id, task in self.active_tasks.items() if task.done()]
+                completed_tasks = [ad_id for ad_id, task in self.active_tasks.items() if task.done() or task.cancelled()]
                 for ad_id in completed_tasks:
                     del self.active_tasks[ad_id]
 
