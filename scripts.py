@@ -32,6 +32,7 @@ class AdvertisementScheduler:
     async def get_photo_access_hash(self, client, photo_id):
         """Rasmning `access_hash` ma'lumotlarini olish"""
         try:
+            # photo_id dan to'liq rasm ob'ektini olish
             message = await client.get_messages(None, ids=photo_id)
             if message and message.media and isinstance(message.media.photo, InputPhoto):
                 input_photo = message.media.photo
@@ -55,6 +56,7 @@ class AdvertisementScheduler:
                     access_hash=photo_data["access_hash"],
                     file_reference=photo_data["file_reference"]
                 )
+                # Foto yuborish uchun InputMediaPhoto ishlatish
                 await client.send_file(
                     group_id,
                     file=media,
