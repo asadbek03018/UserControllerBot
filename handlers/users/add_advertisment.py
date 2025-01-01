@@ -72,12 +72,10 @@ async def handle_photo(message: types.Message, state: FSMContext):
     file_id = photo.file_id
 
     try:
-        file_info = await bot.get_file(file_id)
-        file_path = file_info.file_path
-
+        # Store the actual message ID along with file_id
         await state.update_data(
-            photo_id=file_id,
-            file_path=file_path
+            photo_id=message.message_id,  # Store message ID instead of just file_id
+            file_id=file_id  # Keep file_id for reference
         )
 
         await message.answer("✍️ Endi reklama matnini yuboring.\nBekor qilish uchun /cancel", parse_mode="HTML")
@@ -87,6 +85,8 @@ async def handle_photo(message: types.Message, state: FSMContext):
         logging.error(f"Error handling photo: {str(e)}")
         await message.answer("❌ Rasmni saqlashda xatolik yuz berdi. Qaytadan urinib ko'ring.", parse_mode="HTML")
         await state.clear()
+
+
 
 
 @router.message(CreateAdvertisementStates.waiting_for_text)

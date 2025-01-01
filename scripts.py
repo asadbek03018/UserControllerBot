@@ -36,24 +36,23 @@ class AdvertisementScheduler:
             except asyncio.CancelledError:
                 logger.info("Reklama tarqatuvchi to'xtatildi.")
 
-    async def get_photo_access_hash(self, client: TelegramClient, photo_id: int) -> dict:
+    async def get_photo_access_hash(self, client: TelegramClient, message_id: int) -> dict:
         """Rasmning access_hash ma'lumotlarini olish"""
         try:
-            # photo_id dan to'liq rasm ob'ektini olish
-            message = await client.get_messages(None, ids=photo_id)
-            if not isinstance(message, Message):
-                raise ValueError("Xabar topilmadi")
+            # Get message by its ID from user's own messages
+            message = await client.get_messages('me', ids=message_id)
 
-            if message.media and message.media.photo:
-                photo = message.media.photo
-                return {
-                    "id": photo.id,
-                    "access_hash": photo.access_hash,
-                    "file_reference": photo.file_reference,
-                    "message_id": message.id
-                }
-            else:
-                raise ValueError("Xabarda rasm topilmadi")
+            if not message or not message.photo:
+                logger.error(f"Message {message_id} not found or contains no photo")
+                return None
+
+            photo = message.photo
+            return {
+                "id": photo.id,
+                "access_hash": photo.access_hash,
+                "file_reference": photo.file_reference,
+                "message_id": message_id
+            }
         except Exception as e:
             logger.error(f"Rasmni olishda xatolik: {str(e)}")
             return None
@@ -79,38 +78,26 @@ class AdvertisementScheduler:
         try:
             if photo_data:
                 try:
-                    media = InputPhoto(
-                        id=photo_data["id"],
-                        access_hash=photo_data["access_hash"],
-                        file_reference=photo_data["file_reference"]
-                    )
-                    await client.send_file(
-                        group_id,
-                        file=media,
-                        caption=text,
-                        parse_mode='html'
-                    )
-                except Exception as first_error:
-                    # Agar file_reference eskigan bo'lsa, qayta urinish
-                    if "file reference" in str(first_error).lower():
-                        success = await self.retry_send_photo(
-                            client,
+                    # First try to get the message and send directly
+                    message = await client.get_messages('me', ids=photo_data["message_id"])
+                    if message and message.photo:
+                        await client.send_file(
                             group_id,
-                            photo_data["message_id"],
-                            text
+                            file=message.photo,
+                            caption=text,
+                            parse_mode='html'
                         )
-                        if not success:
-                            raise first_error
                     else:
-                        raise first_error
+                        # Fallback to sending just the text if photo is not found
+                        logger.warning(f"Photo not found for message {photo_data['message_id']}, sending text only")
+                        await client.send_message(group_id, text, parse_mode='html')
+                except Exception as e:
+                    logger.error(f"Error sending photo: {str(e)}")
+                    # Fallback to sending text only
+                    await client.send_message(group_id, text, parse_mode='html')
             else:
-                await client.send_message(
-                    group_id,
-                    text,
-                    parse_mode='html'
-                )
+                await client.send_message(group_id, text, parse_mode='html')
 
-            # Yuborilgan reklamani logga yozish
             await self.log_sent_advertisement(group_id)
             logger.info(f"Reklama yuborildi: guruh={group_id}")
 
@@ -118,16 +105,7 @@ class AdvertisementScheduler:
             logger.error(f"Reklamani yuborishda xatolik: guruh={group_id}, xato={str(e)}")
             raise e
 
-    async def log_sent_advertisement(self, group_id: int):
-        """Yuborilgan reklamani logga yozish"""
-        try:
-            query = """
-                INSERT INTO AdvertisementLogs (ad_id, group_id, sent_at)
-                VALUES ($1, $2, CURRENT_TIMESTAMP)
-            """
-            await db.execute(query, ad_id, group_id, execute=True)
-        except Exception as e:
-            logger.error(f"Reklama logini yozishda xatolik: {str(e)}")
+
 
     async def process_advertisement(self, ad: dict):
         """Bitta reklamani qayta ishlash"""
