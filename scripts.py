@@ -36,59 +36,25 @@ class AdvertisementScheduler:
             except asyncio.CancelledError:
                 logger.info("Reklama tarqatuvchi to'xtatildi.")
 
-    async def get_photo_access_hash(self, client: TelegramClient, message_id: int) -> dict:
-        """Rasmning access_hash ma'lumotlarini olish"""
-        try:
-            # Get message by its ID from user's own messages
-            message = await client.get_messages('me', ids=message_id)
-
-            if not message or not message.photo:
-                logger.error(f"Message {message_id} not found or contains no photo")
-                return None
-
-            photo = message.photo
-            return {
-                "id": photo.id,
-                "access_hash": photo.access_hash,
-                "file_reference": photo.file_reference,
-                "message_id": message_id
-            }
-        except Exception as e:
-            logger.error(f"Rasmni olishda xatolik: {str(e)}")
-            return None
-
-    async def retry_send_photo(self, client: TelegramClient, group_id: int, photo_id: int, text: str):
-        """Rasmni qayta yuborish (file_reference eskirganda)"""
-        try:
-            message = await client.get_messages(None, ids=photo_id)
-            if message and message.media:
-                await client.send_file(
-                    group_id,
-                    file=message.media,
-                    caption=text,
-                    parse_mode='html'
-                )
-                return True
-        except Exception as e:
-            logger.error(f"Rasmni qayta yuborishda xatolik: {str(e)}")
-            return False
-
     async def send_advertisement(self, client: TelegramClient, group_id: int, photo_data: dict, text: str):
         """Rasm yoki matnni yuborish"""
         try:
             if photo_data:
                 try:
-                    # First try to get the message and send directly
+                    # Get the message
                     message = await client.get_messages('me', ids=photo_data["message_id"])
+
                     if message and message.photo:
+                        # Upload the photo file first
+                        uploaded_file = await client.upload_file(await message.download_media())
+                        # Then send with caption
                         await client.send_file(
                             group_id,
-                            file=message.photo,
+                            file=uploaded_file,
                             caption=text,
                             parse_mode='html'
                         )
                     else:
-                        # Fallback to sending just the text if photo is not found
                         logger.warning(f"Photo not found for message {photo_data['message_id']}, sending text only")
                         await client.send_message(group_id, text, parse_mode='html')
                 except Exception as e:
@@ -105,7 +71,28 @@ class AdvertisementScheduler:
             logger.error(f"Reklamani yuborishda xatolik: guruh={group_id}, xato={str(e)}")
             raise e
 
+    async def get_photo_access_hash(self, client: TelegramClient, message_id: int) -> dict:
+        """Rasmning access_hash ma'lumotlarini olish"""
+        try:
+            message = await client.get_messages('me', ids=message_id)
 
+            if not message or not message.photo:
+                logger.error(f"Message {message_id} not found or contains no photo")
+                return None
+
+            # Download and verify the photo exists
+            media_path = await message.download_media()
+            if not media_path:
+                logger.error(f"Could not download photo from message {message_id}")
+                return None
+
+            return {
+                "message_id": message_id,
+                "media_path": media_path
+            }
+        except Exception as e:
+            logger.error(f"Rasmni olishda xatolik: {str(e)}")
+            return None
 
     async def process_advertisement(self, ad: dict):
         """Bitta reklamani qayta ishlash"""
@@ -157,16 +144,14 @@ class AdvertisementScheduler:
                             task = asyncio.create_task(self.process_advertisement(ad))
                             self.active_tasks[ad["id"]] = task
 
-                # Keyingi tekshirish vaqtini hisoblash
-                next_check = min(60, min((ad["duration_minutes"] for ad in ads), default=60))
-                await asyncio.sleep(next_check)
+                # Add 5 second buffer to duration_minutes
+                next_check = ad['duration_minutes'] * 60  # Convert to seconds
+                await asyncio.sleep(next_check + 5)
 
-                # Tugallangan tasklarni tozalash
                 completed_tasks = [ad_id for ad_id, task in self.active_tasks.items() if task.done()]
                 for ad_id in completed_tasks:
                     task = self.active_tasks.pop(ad_id)
                     try:
-                        # Taskda xatolik bo'lgan bo'lsa, uni log qilish
                         exc = task.exception()
                         if exc:
                             logger.error(f"Task xatolik bilan tugadi: reklama={ad_id}, xato={str(exc)}")

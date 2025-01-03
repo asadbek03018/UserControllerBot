@@ -93,7 +93,7 @@ async def handle_photo(message: types.Message, state: FSMContext):
 async def handle_text(message: types.Message, state: FSMContext):
     await state.update_data(text=message.text)
 
-    durations = [15, 30, 60, 120]
+    durations = [1, 2, 3, 4, 5, 10, 15, 30, 60, 120]
     buttons = [
         [InlineKeyboardButton(text=f"⏱ {duration} daqiqa", callback_data=f"set_duration:{duration}")]
         for duration in durations
